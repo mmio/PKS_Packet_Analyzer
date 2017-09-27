@@ -2,17 +2,16 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <stdbool.h>
+
+/* Potrebne pre c99 pre pcap.h */
+#define u_char unsigned char
+#define u_short unsigned short
+#define u_int unsigned int
+
 #include <pcap/pcap.h>
 
 #define PRT_FIRST 20
 #define PRT_LAST 0 
-
-/* EthernetII */
-/* IEEE 802.3
-   IEEE 802.3 - LLC,
-   IEEE 802.3- LLC - SNAP,
-   IEEE 802.3 – Raw
-*/
 
 #define ROLL(x)                                                  \
         {                                                        \
@@ -76,7 +75,7 @@ void print_bytes(const uint8_t *data, size_t len);
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
         printf("---%ld----\n", count++);
-        for (uint i = 0; i < len; ++i) {
+        for (size_t i = 0; i < len; ++i) {
                 if (i && i % 32 == 0)
                         putchar('\n');
                 printf("%02X ", data[i]);

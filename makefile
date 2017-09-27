@@ -1,8 +1,11 @@
 CC=gcc
-CFLAGS=-Wall -Werror -lpcap -pedantic -pipe -std=gnu99
+CFLAGS=-Wall -Wextra -Werror -pedantic -pipe -std=c99 -O3 -lpcap -march=native
 
-BIN_DIR=./bin/
-SRC_DIR=./src/
+BIN=./bin/
+SRC=./src/
 
 all:
-	$(CC) -o $(BIN_DIR)packet_analyzer.out $(SRC_DIR)main.c $(CFLAGS)
+	$(CC) -o $(BIN)packet_analyzer.out $(SRC)main.c $(CFLAGS)
+
+clear:
+	rm $(BIN)packet_analyzer.out
