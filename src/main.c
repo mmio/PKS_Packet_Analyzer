@@ -53,24 +53,24 @@ bool is_ipv4_tcp(const uint8_t type[2]);
 char* get_ethertype(const uint8_t fields[2]);
 void print_bytes(const uint8_t *data, size_t len);
 
-/* void print_struct_data(const u_char *data, size_t len, size_t count) */
-/* { */
-/*         printf("---%ld----\n", count++); */
+void print_struct_data(const u_char *data, size_t caplen, size_t wire_len, size_t count)
+{
+        printf("---%ld----\n", count++);
 
-/*         const FRAME *frm = (FRAME*)data; */
+        const FRAME *frm = (FRAME*)data;
         
-/*         printf("%s", "Destination MAC: "); */
-/*         print_bytes(frm->mac.dst_addr, 6); */
-/*         putchar('\n'); */
+        printf("%s", "Destination MAC: ");
+        print_bytes(frm->mac.dst_addr, 6);
+        putchar('\n');
         
-/*         printf("%s", "Source MAC: "); */
-/*         print_bytes(frm->mac.src_addr, 6); */
-/*         putchar('\n'); */
+        printf("%s", "Source MAC: ");
+        print_bytes(frm->mac.src_addr, 6);
+        putchar('\n');
 
-/*         for (uint i = 0; i < len; ++i) */
-/*                 printf("%02X ", data[i]); */
-/*         putchar('\n'); */
-/* } */
+        for (uint i = 0; i < caplen; ++i)
+                printf("%02X ", data[i]);
+        putchar('\n');
+}
 
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
