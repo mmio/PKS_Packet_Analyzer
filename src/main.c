@@ -36,8 +36,6 @@ typedef struct {
 } MAC;
 
 typedef struct {
-        /* uint8_t dst_addr[6]; */
-        /* uint8_t src_addr[6]; */
         MAC mac;
         uint8_t l_o_et[2];
         uint8_t payload_fcs[1504];
@@ -67,9 +65,11 @@ void print_struct_data(const u_char *data, size_t caplen, size_t wire_len, size_
         print_bytes(frm->mac.src_addr, 6);
         putchar('\n');
 
-        for (uint i = 0; i < caplen; ++i)
+        for (size_t i = 0; i < caplen; ++i)
                 printf("%02X ", data[i]);
         putchar('\n');
+
+        printf("Len on wire: %ld\n", wire_len);
 }
 
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
