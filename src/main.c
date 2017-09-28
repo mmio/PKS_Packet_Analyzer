@@ -7,12 +7,7 @@
 	#define u_char unsigned char
 	#define u_short unsigned short
 	#define u_int unsigned int
-#elif _WIN32
-
-#else
-
 #endif
-
 
 #include <pcap/pcap.h>
 
