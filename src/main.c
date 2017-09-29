@@ -3,7 +3,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 
-#ifdef __linux__ 
+#ifdef __GNUC__ 
 	#define u_char unsigned char
 	#define u_short unsigned short
 	#define u_int unsigned int
