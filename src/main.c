@@ -11,8 +11,8 @@
 
 #include <pcap/pcap.h>
 
-#define PRT_FIRST 20
-#define PRT_LAST 0 
+#define PRT_FIRST 10
+#define PRT_LAST 10 
 
 #define ROLL(x)                                                  \
         {                                                        \
@@ -73,6 +73,16 @@ void print_struct_data(const u_char *data, size_t caplen, size_t wire_len, size_
         printf("Len on wire: %ld\n", wire_len);
 }
 
+/* Contains all transmitting ip addresses + how many B they sent */
+typedef struct {
+        uint32_t ip;
+        long sent;
+} IP_list;
+IP_list *iplist;
+long iplist_len;
+void addIp(uint32_t, long);
+void print_ip_list();
+
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
         printf("---%ld----\n", count++);
@@ -82,8 +92,8 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                 printf("%02X ", data[i]);
         }
         putchar('\n');
-        printf("Captured len: %lu\n", len);
-        printf("Total len: %lu\n", pktlen);
+        printf("Frame len: %lu\n", pktlen);
+        printf("Total len(frame hdr + data + FCS): %lu\n", pktlen + 4);
         
         printf("%s", "Dst MAC:\t");
         PRINT(6);
@@ -97,15 +107,14 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                 printf("%s\n", "frame: Ethernet II");
                 printf("%s%s\n", "EtherType:", etherTypes[data[0]<<8 | data[1]]);
 
-                if (is_ipv4_tcp(data)) {
-                        
-                }
+                //if (is_ipv4_tcp(data)) {
+                //        
+                //}
         } else {
                 printf("%s\n", "frame: IEEE 802.3");
                 printf("%s%dB\n", "Length: ", data[0] <<8 | data[1]);
                 ROLL(3);        /* To ssap */
 
-             
                 switch (data[0]) {
                 case 0xAA:
                         printf("%s\n", "Type: SNAP");
@@ -118,18 +127,23 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                 }
                 return;
         }
+}
 
-        
-        /* Get frame type */
-        /* if ipv4 Get protocol type */
-        /* Get tcp or udp */
-        /* Get higher protocol */
-        /* if arp  */
-        
+void data_analysis(const u_char *data, size_t len)
+{
+        ROLL(12);
+        if (is_etherII(data)) {
+                if (is_ipv4_tcp(data)) {
+                        ROLL(14);
 
-        
-        /* printf("\n--------\n"); */
-                //putchar('\n');
+                        uint32_t ip = data[0] << 24;
+                        ip += data[1] << 16;
+                        ip += data[2] << 8;
+                        ip += data[3];
+                        
+                        addIp(ip, len);
+                }
+        }
 }
 
 size_t get_cap_count(char *savefile)
@@ -160,6 +174,9 @@ int main(int argc, char **argv)
 
         int cap_count = get_cap_count(argv[1]);
         
+        iplist_len = cap_count;
+        iplist = calloc(iplist_len, sizeof *iplist);
+        
         pcap_t *handle = pcap_open_offline(argv[1], errbuf);
         if (!handle) {
                 puts(errbuf);
@@ -171,14 +188,19 @@ int main(int argc, char **argv)
         const u_char *data;
         int count = 1;
         while ((data = pcap_next(handle, ph))) {
+                data_analysis(data, ph->len);
+                
                 if (cap_count > PRT_FIRST + PRT_LAST)
                         if (count <= PRT_FIRST || count > cap_count - PRT_LAST)
                                 print_data(data, ph->caplen, ph->len, count);
                 count++;
         }
-        
+
+        puts("Statistika IP odosielatelov");
+        print_ip_list();
+
         pcap_close(handle);
-		getchar();
+        //getchar();
         return 0;
 }
 
@@ -200,4 +222,49 @@ bool is_ipv4_tcp(const uint8_t type[2])
         if ((type[0]<<8 | type[1]) == 0x0800)
                 return true;
         return false;
+}
+
+void addIp(uint32_t ip, long sent)
+{
+        for (long i = 0; i < iplist_len; ++i) {
+                if (iplist[i].ip == ip) {
+                        iplist[i].sent += sent;
+                        break;
+                }
+
+                if (iplist[i].ip == 0) {
+                        iplist[i].ip = ip;
+                        iplist[i].sent = sent;
+                        break;
+                }
+        }
+}
+
+void print_ip_list()
+{
+        long max_i = 0;
+
+        for (long i = 0; i < iplist_len; ++i) {
+                if (iplist[i].ip == 0)
+                        break;
+
+                if (iplist[i].sent > iplist[max_i].sent)
+                        max_i = i;
+
+                int ip = iplist[i].ip;
+                printf("%d.%d.%d.%d -> sent %ld\n",
+                       (ip & 0xFF000000) >> 24,
+                       (ip & 0xFF0000) >> 16,
+                       (ip & 0xFF00) >> 8,
+                       (ip & 0xFF),
+                        iplist[i].sent);
+        }
+
+        puts("Najviac poslal");
+        printf("%d.%d.%d.%d -> sent %ld\n",
+               (iplist[max_i].ip & 0xFF000000) >> 24,
+               (iplist[max_i].ip & 0xFF0000) >> 16,
+               (iplist[max_i].ip & 0xFF00) >> 8,
+               (iplist[max_i].ip & 0xFF),
+                iplist[max_i].sent);
 }
