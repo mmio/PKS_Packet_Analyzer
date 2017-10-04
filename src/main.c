@@ -1,3 +1,4 @@
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
@@ -42,13 +43,16 @@ typedef struct {
         uint8_t payload_fcs[1504];
 } FRAME;
 
-char* etherTypes[0x10000] = {
-        [0x0800] = "IPv4",
-        [0x0806] = "ARP"
+char etherTypes[0x10000][512] = {
+        [0x0800] = "IPv4",      /* Hardcoded stuff */
+        [0x0806] = "ARP"        /* Hardcoded stuff */
 };
+char tcpProts[0x10000][512];
+char ip4Prots[0x1000][512];
 
 bool is_etherII(const uint8_t fields[2]);
-bool is_ipv4_tcp(const uint8_t type[2]);
+bool is_ipv4(const uint8_t type[2]);
+bool is_tcp(const uint8_t* protocol);
 char* get_ethertype(const uint8_t fields[2]);
 void print_bytes(const uint8_t *data, size_t len);
 
@@ -83,6 +87,18 @@ long iplist_len;
 void addIp(uint32_t, long);
 void print_ip_list();
 
+/* Linked list for frames */
+typedef struct node {
+        uint8_t dump[1522];
+        size_t len;
+        struct node *next;
+        struct node *prev;
+} NODE;
+
+void add_node(uint8_t*, size_t);
+void print_nodes();
+NODE *caps;
+
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
         printf("---%ld----\n", count++);
@@ -107,9 +123,16 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                 printf("%s\n", "frame: Ethernet II");
                 printf("%s%s\n", "EtherType:", etherTypes[data[0]<<8 | data[1]]);
 
-                //if (is_ipv4_tcp(data)) {
-                //        
-                //}
+                if (is_ipv4(data)) {
+                        ROLL(2);
+                        ROLL(9);
+                        if (is_tcp(data)) {
+                                puts("Analyzing communication");
+
+                        //        Deeper analysis
+                        /* Switch for specific stuff */
+                        }
+                }
         } else {
                 printf("%s\n", "frame: IEEE 802.3");
                 printf("%s%dB\n", "Length: ", data[0] <<8 | data[1]);
@@ -133,7 +156,7 @@ void data_analysis(const u_char *data, size_t len)
 {
         ROLL(12);
         if (is_etherII(data)) {
-                if (is_ipv4_tcp(data)) {
+                if (is_ipv4(data)) {
                         ROLL(14);
 
                         uint32_t ip = data[0] << 24;
@@ -164,8 +187,11 @@ size_t get_cap_count(char *savefile)
         return cap_count;
 }
 
+void init_nums();
 int main(int argc, char **argv)
 {
+        init_nums();
+        
         char errbuf[PCAP_ERRBUF_SIZE];
         if (argc != 2) {
                 puts("Usage: ./test.c <savefile>");
@@ -217,9 +243,15 @@ void print_bytes(const uint8_t *data, size_t len)
                 printf("%02X ", *data);
 }
 
-bool is_ipv4_tcp(const uint8_t type[2])
+bool is_ipv4(const uint8_t type[2])
 {
         if ((type[0]<<8 | type[1]) == 0x0800)
+                return true;
+        return false;
+}
+
+bool is_tcp(const uint8_t* protocol) {
+        if (protocol[0] == 0x06)
                 return true;
         return false;
 }
@@ -267,4 +299,55 @@ void print_ip_list()
                (iplist[max_i].ip & 0xFF00) >> 8,
                (iplist[max_i].ip & 0xFF),
                 iplist[max_i].sent);
+}
+
+void add_node(uint8_t *d, size_t l)
+{
+        NODE *new_node = calloc(1, sizeof *new_node);
+        memcpy(new_node->dump, d, l);
+        new_node->len = l;
+        new_node->next = caps;
+        caps = new_node;
+}
+
+void print_nodes()
+{
+        NODE *iter = caps;
+        while (iter) {
+                printf("Len %ld\n", iter->len);
+                iter = iter->next;
+        }
+}
+
+void init_nums()
+{
+        char name[512];
+        int num;
+
+        FILE *eth2f = fopen("src/eth_prots.txt", "r");
+        if (!eth2f) {
+                perror("ETH FILE");
+                exit(1);
+        }
+        while (fscanf(eth2f, "%d %s", &num, name) != EOF)
+                strcpy(etherTypes[num], name);
+        fclose(eth2f);
+        
+        FILE *ipv4f = fopen("src/ip4_prots.txt", "r");
+        if (!ipv4f) {
+                perror("IP FILE");
+                exit(1);
+        }
+        while (fscanf(ipv4f, "%d %s", &num, name) != EOF)
+                strcpy(ip4Prots[num], name);
+        fclose(ipv4f);
+        
+        FILE *tcpf = fopen("src/tcp_prots.txt", "r");
+        if (!tcpf) {
+                perror("TCP FILE");
+                exit(1);
+        }
+        while (fscanf(tcpf, "%d %s", &num, name) != EOF)
+                strcpy(tcpProts[num], name);
+        fclose(tcpf);
 }
