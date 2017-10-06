@@ -106,10 +106,21 @@ typedef struct node {
         struct node *prev;
 } NODE;
 void add_node(const uint8_t*, size_t);
+NODE* add_node_2(NODE *nd, const uint8_t *d, size_t l);
 void print_nodes();
+void print_nodes_2(NODE *nd);
 NODE *caps;
 
+NODE *http;
+NODE *https;
+NODE *telnet;
+NODE *ssh;
+NODE *ftp_com;
+NODE *ftp_data;
+NODE *tftp;
 
+NODE *icmp;
+NODE *arp;
 
 /* To collect data based on function test */
 typedef struct collector {
@@ -133,6 +144,8 @@ COLLECTOR* new_collector();
 
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
+        const u_char *start = data;
+        
         printf("---%ld----\n", count++);
         for (size_t i = 0; i < len; ++i) {
                 if (i && i % 32 == 0)
@@ -159,12 +172,84 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                         /* Osetrit viac ako 5*4 hlavicku ipv4 */
                         ROLL(2);
                         ROLL(9);
+
+                        /* Move this to data analysis */
                         if (is_tcp(data)) {
                                 puts("Analyzing communication");
 
-                        //        Deeper analysis
-                        /* Switch for specific stuff */
-                                /* Based on type add to linked list of protocols */
+                                ROLL(11);
+                                int src_port = ((*data) << 8) | *(data+1);
+                                printf("---SOURCE PORT---%x\n", src_port);
+                                ROLL(2);
+                                int dst_port = ((*data) << 8) | *(data+1);
+                                printf("---DESTINation PORT---%x\n", dst_port);
+
+                                /* Try searching for the protocols, no implicit stuff */
+                                switch(src_port) {
+                                case 8008:
+                                case 8080:
+                                case 80:
+                                        puts("----------------------------------------------HTTP");
+                                        http = add_node_2(http, start, len);
+                                        return;
+                                case 443:
+                                        puts("----------------------------------------------HTTPS");
+                                        https = add_node_2(https, start, len);
+                                        return;
+                                case 23:
+                                        puts("----------------------------------------------TELNET");
+                                        telnet = add_node_2(telnet, start, len);
+                                        return;
+                                case 22:
+                                        puts("SSH");
+                                        ssh = add_node_2(ssh, start, len);
+                                        return;
+                                case 21:
+                                        puts("FTP COM");
+                                        ftp_com = add_node_2(ftp_com, start, len);
+                                        return;
+                                case 20:
+                                        puts("FTP DATA");
+                                        ftp_data = add_node_2(ftp_data, start, len);
+                                        return;
+                                case 69:
+                                        puts("TFTP");
+                                        tftp = add_node_2(tftp, start, len);
+                                        return;
+                                }
+
+                                switch(dst_port) {
+                                case 8008:
+                                case 8080:
+                                case 80:
+                                        puts("----------------------------------------------HTTP");
+                                        http = add_node_2(http, start, len);
+                                        break;
+                                case 443:
+                                        puts("----------------------------------------------HTTPS");
+                                        https = add_node_2(https, start, len);
+                                        break;
+                                case 23:
+                                        puts("----------------------------------------------TELNET");
+                                        telnet = add_node_2(telnet, start, len);
+                                        break;
+                                case 22:
+                                        puts("SSH");
+                                        ssh = add_node_2(ssh, start, len);
+                                        break;
+                                case 21:
+                                        puts("FTP COM");
+                                        ftp_com = add_node_2(ftp_com, start, len);
+                                        break;
+                                case 20:
+                                        puts("FTP DATA");
+                                        ftp_data = add_node_2(ftp_data, start, len);
+                                        break;
+                                case 69:
+                                        puts("TFTP");
+                                        tftp = add_node_2(tftp, start, len);
+                                        break;
+                                }
                         }
                 }
         } else {
@@ -270,6 +355,21 @@ int main(int argc, char **argv)
         puts("Statistika IP odosielatelov");
         print_ip_list();
 
+        puts("--------------HTTP--------------");
+        print_nodes_2(http);
+        puts("--------------HTTPS--------------");
+        print_nodes_2(https);
+        puts("--------------SSH--------------");
+        print_nodes_2(ssh);
+        puts("--------------FTP_COM--------------");
+        print_nodes_2(ftp_com);
+        puts("--------------FTP_DATA--------------");
+        print_nodes_2(ftp_data);
+        puts("--------------TFTP--------------");
+        print_nodes_2(tftp);
+        puts("--------------TELNET--------------");
+        print_nodes_2(telnet);
+
         pcap_close(handle);
         //getchar();
         //print_nodes();
@@ -356,9 +456,31 @@ void add_node(const uint8_t *d, size_t l)
         caps = new_node;
 }
 
+NODE* add_node_2(NODE *nd, const uint8_t *d, size_t l)
+{
+        NODE *new_node = calloc(1, sizeof *new_node);
+        memcpy(new_node->dump, d, l);
+        new_node->len = l;
+        new_node->next = nd;
+        nd = new_node;
+
+        return nd;
+}
+
 void print_nodes()
 {
         NODE *iter = caps;
+        while (iter) {
+                printf("Len %ld\n", iter->len);
+                iter = iter->next;
+        }
+}
+
+void print_nodes_2(NODE *nd)
+{
+        if (nd == NULL)
+                puts("ND NULL");
+        NODE *iter = nd;
         while (iter) {
                 printf("Len %ld\n", iter->len);
                 iter = iter->next;
