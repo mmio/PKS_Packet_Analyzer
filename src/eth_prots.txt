@@ -1,3 +1,2 @@
-200 Ahoj
-300 AhojZas
-
+2048 IPv4
+2054 ARP

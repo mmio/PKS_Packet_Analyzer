@@ -1,3 +1,17 @@
+/* Use only data analysis and collect all data via an array of COLLECTOR structs
+every and each needs a test function, for the main capture(all the frames), there will be
+a default collector present with a test that always returns true. every frame has to go through
+all the collector tests if a positive frame is found it has to be saved in a linked list(or array maybe)
+
++
+You should also specify what information to collect, you can use a void pointer to an array, and 
+specify printing in the print function. I want to use this feature with the ip statistics, but probably will
+run in problems
+
++
+
+ */
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,10 +57,7 @@ typedef struct {
         uint8_t payload_fcs[1504];
 } FRAME;
 
-char etherTypes[0x10000][512] = {
-        [0x0800] = "IPv4",      /* Hardcoded stuff */
-        [0x0806] = "ARP"        /* Hardcoded stuff */
-};
+char etherTypes[0x10000][512];
 char tcpProts[0x10000][512];
 char ip4Prots[0x1000][512];
 
@@ -94,10 +105,29 @@ typedef struct node {
         struct node *next;
         struct node *prev;
 } NODE;
-
-void add_node(uint8_t*, size_t);
+void add_node(const uint8_t*, size_t);
 void print_nodes();
 NODE *caps;
+
+/* To collect data based on function test */
+typedef struct collector {
+        char name[250];
+        NODE *list;
+        bool(*test)(const uint8_t*);
+        void(*print)(const struct collector*); /* Must be specifie so that it knows what and how to print */
+        void (*destructor)(struct collector*);
+} COLLECTOR;
+COLLECTOR* new_collector();
+/* Also need an array of collectors */
+/* Something like this, maybe????? */
+/* bool test_for_http(const uint8_t *data) { */
+/*         if (*(data + 20) == 0x60) */
+/*                 return true; */
+/*         return false; */
+/* } */
+/* void print_http(const uint8_t *data) { */
+/*         printf("%d\n", data[22]); */
+/* } */
 
 void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 {
@@ -131,6 +161,7 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
 
                         //        Deeper analysis
                         /* Switch for specific stuff */
+                                /* Based on type add to linked list of protocols */
                         }
                 }
         } else {
@@ -157,6 +188,9 @@ void data_analysis(const u_char *data, size_t len)
         ROLL(12);
         if (is_etherII(data)) {
                 if (is_ipv4(data)) {
+                        UNROLL(12);
+                        add_node(data, len);
+                        ROLL(12);
                         ROLL(14);
 
                         uint32_t ip = data[0] << 24;
@@ -165,6 +199,14 @@ void data_analysis(const u_char *data, size_t len)
                         ip += data[3];
                         
                         addIp(ip, len);
+                        
+                        /* if (is_tcp(const uint8_t *protocol)) { */
+                        /*         switch() { /\* Protocol ids *\/ */
+                        /*         case http: */
+                        /*                 add to http linked list/ arp linked list */
+                        /*                         /\* At the end print http linked list, with a function *\/ */
+                        /*         } */
+                        /* } */
                 }
         }
 }
@@ -227,6 +269,7 @@ int main(int argc, char **argv)
 
         pcap_close(handle);
         //getchar();
+        //print_nodes();
         return 0;
 }
 
@@ -301,7 +344,7 @@ void print_ip_list()
                 iplist[max_i].sent);
 }
 
-void add_node(uint8_t *d, size_t l)
+void add_node(const uint8_t *d, size_t l)
 {
         NODE *new_node = calloc(1, sizeof *new_node);
         memcpy(new_node->dump, d, l);
