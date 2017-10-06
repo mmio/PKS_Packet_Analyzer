@@ -26,8 +26,8 @@ run in problems
 
 #include <pcap/pcap.h>
 
-#define PRT_FIRST 10
-#define PRT_LAST 10 
+#define PRT_FIRST 20
+#define PRT_LAST 20
 
 #define ROLL(x)                                                  \
         {                                                        \
@@ -67,6 +67,15 @@ bool is_tcp(const uint8_t* protocol);
 char* get_ethertype(const uint8_t fields[2]);
 void print_bytes(const uint8_t *data, size_t len);
 
+typedef struct arp_frame {
+        uint8_t dump[1522];
+} ARP_FRAME;
+
+typedef struct arp_pair {
+        ARP_FRAME *request;
+        ARP_FRAME *reply;
+} ARP_PAIR;
+
 void print_struct_data(const u_char *data, size_t caplen, size_t wire_len, size_t count)
 {
         printf("---%ld----\n", count++);
@@ -104,23 +113,32 @@ typedef struct node {
         size_t len;
         struct node *next;
         struct node *prev;
+        int p;
 } NODE;
+
+typedef struct list {
+        NODE *head;
+}LIST;
+
+typedef struct lists {
+        LIST *http;
+        LIST *https;
+        LIST *telnet;
+        LIST *ssh;
+        LIST *ftp_com;
+        LIST *ftp_data;
+        LIST *tftp;
+        LIST *arp_raw;
+} LISTS;
+LIST *create_list();
+
 void add_node(const uint8_t*, size_t);
-NODE* add_node_2(NODE *nd, const uint8_t *d, size_t l);
+LIST* add_node_2(LIST *ls, const uint8_t *d, size_t l, int p);
 void print_nodes();
 void print_nodes_2(NODE *nd);
 NODE *caps;
 
-NODE *http;
-NODE *https;
-NODE *telnet;
-NODE *ssh;
-NODE *ftp_com;
-NODE *ftp_data;
-NODE *tftp;
-
 NODE *icmp;
-NODE *arp;
 
 /* To collect data based on function test */
 typedef struct collector {
@@ -142,11 +160,9 @@ COLLECTOR* new_collector();
 /*         printf("%d\n", data[22]); */
 /* } */
 
-void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
+void print_data(const u_char *data, size_t len, size_t pktlen, size_t count, LISTS *lsts)
 {
         const u_char *start = data;
-        
-        printf("---%ld----\n", count++);
         for (size_t i = 0; i < len; ++i) {
                 if (i && i % 32 == 0)
                         putchar('\n');
@@ -185,36 +201,32 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                                 printf("---DESTINation PORT---%x\n", dst_port);
 
                                 /* Try searching for the protocols, no implicit stuff */
+
+                                /* get_port_n_by_name(); */
+                                
                                 switch(src_port) {
                                 case 8008:
                                 case 8080:
                                 case 80:
-                                        puts("----------------------------------------------HTTP");
-                                        http = add_node_2(http, start, len);
+                                        lsts->http = add_node_2(lsts->http, start, len, count);
                                         return;
                                 case 443:
-                                        puts("----------------------------------------------HTTPS");
-                                        https = add_node_2(https, start, len);
+                                        lsts->https = add_node_2(lsts->https, start, len, count);
                                         return;
                                 case 23:
-                                        puts("----------------------------------------------TELNET");
-                                        telnet = add_node_2(telnet, start, len);
+                                        lsts->telnet = add_node_2(lsts->telnet, start, len, count);
                                         return;
                                 case 22:
-                                        puts("SSH");
-                                        ssh = add_node_2(ssh, start, len);
+                                        lsts->ssh = add_node_2(lsts->ssh, start, len, count);
                                         return;
                                 case 21:
-                                        puts("FTP COM");
-                                        ftp_com = add_node_2(ftp_com, start, len);
+                                        lsts->ftp_com = add_node_2(lsts->ftp_com, start, len, count);
                                         return;
                                 case 20:
-                                        puts("FTP DATA");
-                                        ftp_data = add_node_2(ftp_data, start, len);
+                                        lsts->ftp_data = add_node_2(lsts->ftp_data, start, len, count);
                                         return;
                                 case 69:
-                                        puts("TFTP");
-                                        tftp = add_node_2(tftp, start, len);
+                                        lsts->tftp = add_node_2(lsts->tftp, start, len, count);
                                         return;
                                 }
 
@@ -222,32 +234,25 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                                 case 8008:
                                 case 8080:
                                 case 80:
-                                        puts("----------------------------------------------HTTP");
-                                        http = add_node_2(http, start, len);
+                                        lsts->http = add_node_2(lsts->http,start, len, count);
                                         break;
                                 case 443:
-                                        puts("----------------------------------------------HTTPS");
-                                        https = add_node_2(https, start, len);
+                                        lsts->https = add_node_2(lsts->https, start, len, count);
                                         break;
                                 case 23:
-                                        puts("----------------------------------------------TELNET");
-                                        telnet = add_node_2(telnet, start, len);
+                                        lsts->telnet = add_node_2(lsts->telnet, start, len, count);
                                         break;
                                 case 22:
-                                        puts("SSH");
-                                        ssh = add_node_2(ssh, start, len);
+                                        lsts->ssh = add_node_2(lsts->ssh, start, len, count);
                                         break;
                                 case 21:
-                                        puts("FTP COM");
-                                        ftp_com = add_node_2(ftp_com, start, len);
+                                        lsts->ftp_com = add_node_2(lsts->ftp_com, start, len, count);
                                         break;
                                 case 20:
-                                        puts("FTP DATA");
-                                        ftp_data = add_node_2(ftp_data, start, len);
+                                        lsts->ftp_data = add_node_2(lsts->ftp_data, start, len, count);
                                         break;
                                 case 69:
-                                        puts("TFTP");
-                                        tftp = add_node_2(tftp, start, len);
+                                        lsts->tftp = add_node_2(lsts->tftp, start, len, count);
                                         break;
                                 }
                         }
@@ -271,8 +276,16 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
         }
 }
 
-void data_analysis(const u_char *data, size_t len)
+bool is_arp(const uint8_t data[2]) {
+        if (2054 == ((data[0] << 8) | data[1]))
+                return true;
+        return false;
+}
+
+void data_analysis(const u_char *data, size_t len, LISTS *lsts)
 {
+        add_node(data, len);
+        
         ROLL(12);
         if (is_etherII(data)) {
                 if (is_ipv4(data)) {
@@ -295,6 +308,9 @@ void data_analysis(const u_char *data, size_t len)
                         /*                         /\* At the end print http linked list, with a function *\/ */
                         /*         } */
                         /* } */
+                } else if (is_arp(data)) {
+                        puts("----------Adding arp stuff----------");
+                        lsts->arp_raw = add_node_2(lsts->arp_raw, data, len, 1);
                 }
         }
 }
@@ -317,9 +333,98 @@ size_t get_cap_count(char *savefile)
         return cap_count;
 }
 
+void init_lists(LISTS*);
 void init_nums();
+
+int get_list_len(LIST *ls) {
+        int counter = 0;
+        NODE *iter = ls->head;
+        while(iter) {
+                counter++;
+                iter = iter->next;
+        }
+
+        return counter;
+}
+
+bool is_arp_request(const uint8_t *data)
+{
+        ROLL(14);
+        ROLL(7);
+
+        if (data[0] == 1)
+                return true;
+        
+        return false;
+}
+
+bool is_arp_reply(const uint8_t *data)
+{
+        ROLL(14);
+        ROLL(7);
+
+        if (data[0] == 0)
+                return true;
+        
+        return false;
+}
+
+bool is_arp_pair(const uint8_t *rq, const uint8_t *re)
+{
+        int wants_to_know[4];
+        int responds_to[4];
+        
+        const uint8_t *data = rq;
+        ROLL(14);
+        ROLL(39);
+
+        for (int i = 0; i < 4; ++i)
+                wants_to_know[i] = *(data+i);
+
+        data = re;
+        ROLL(14);
+        ROLL(29);
+
+        for (int i = 0; i < 4; ++i)
+                responds_to[i] = *(data+i);
+        
+        for (int i = 0; i < 4; ++i)
+                if (wants_to_know[i] != responds_to[i])
+                        return false;
+        return true;
+}
+
+void find_arp_pairs(LIST *ls , ARP_PAIR *alp)
+{
+        int counter = 0;
+        NODE *iter = ls->head;
+        /* find request */
+        while(iter) {
+                if (is_arp_request(iter->dump)) {
+                        NODE *iter2 = ls->head;
+                        while (iter2) {
+                                if (is_arp_reply(iter2->dump)) {
+                                        /* Check if respons is for me  */
+
+                                        /* Yes */
+                                        if (is_arp_pair(iter->dump, iter2->dump)) {
+                                                memcpy(alp[counter].request->dump, iter->dump, iter->len);
+                                                memcpy(alp[counter++].reply->dump, iter2->dump, iter2->len);
+                                                break;
+                                        }
+                                }
+                                iter2 = iter2->next;
+                        }
+                }
+                iter = iter->next;
+        }
+        
+}
+
 int main(int argc, char **argv)
 {
+        LISTS *lsts = calloc(1, sizeof *lsts);
+        init_lists(lsts);
         init_nums();
         
         char errbuf[PCAP_ERRBUF_SIZE];
@@ -344,31 +449,36 @@ int main(int argc, char **argv)
         const u_char *data;
         int count = 1;
         while ((data = pcap_next(handle, ph))) {
-                data_analysis(data, ph->len);
+                data_analysis(data, ph->len, lsts);
                 
                 if (cap_count > PRT_FIRST + PRT_LAST)
                         if (count <= PRT_FIRST || count > cap_count - PRT_LAST)
-                                print_data(data, ph->caplen, ph->len, count);
+                                print_data(data, ph->caplen, ph->len, count, lsts);
                 count++;
         }
+
+        int arp_len = get_list_len(lsts->arp_raw);
+        ARP_PAIR *alp = malloc(sizeof(ARP_PAIR) * arp_len);
+        find_arp_pairs(lsts->arp_raw, alp);
+        //print_arp_pairs();
 
         puts("Statistika IP odosielatelov");
         print_ip_list();
 
         puts("--------------HTTP--------------");
-        print_nodes_2(http);
+        print_nodes_2(lsts->http->head);
         puts("--------------HTTPS--------------");
-        print_nodes_2(https);
+        print_nodes_2(lsts->https->head);
         puts("--------------SSH--------------");
-        print_nodes_2(ssh);
+        print_nodes_2(lsts->ssh->head);
         puts("--------------FTP_COM--------------");
-        print_nodes_2(ftp_com);
+        print_nodes_2(lsts->ftp_com->head);
         puts("--------------FTP_DATA--------------");
-        print_nodes_2(ftp_data);
+        print_nodes_2(lsts->ftp_data->head);
         puts("--------------TFTP--------------");
-        print_nodes_2(tftp);
+        print_nodes_2(lsts->tftp->head);
         puts("--------------TELNET--------------");
-        print_nodes_2(telnet);
+        print_nodes_2(lsts->telnet->head);
 
         pcap_close(handle);
         //getchar();
@@ -456,15 +566,17 @@ void add_node(const uint8_t *d, size_t l)
         caps = new_node;
 }
 
-NODE* add_node_2(NODE *nd, const uint8_t *d, size_t l)
+LIST* add_node_2(LIST *ls, const uint8_t *d, size_t l, int p)
 {
-        NODE *new_node = calloc(1, sizeof *new_node);
-        memcpy(new_node->dump, d, l);
-        new_node->len = l;
-        new_node->next = nd;
-        nd = new_node;
+        NODE *n = malloc(sizeof *n);
+        memcpy(n->dump, d, l);
+        n->p = p;
+        n->len = l;
+        n->next = ls->head;
+        ls->head = n;
+        printf("\n--->%p\n", (void*)ls->head);
 
-        return nd;
+        return ls;
 }
 
 void print_nodes()
@@ -478,11 +590,49 @@ void print_nodes()
 
 void print_nodes_2(NODE *nd)
 {
-        if (nd == NULL)
-                puts("ND NULL");
         NODE *iter = nd;
+        iter = iter->next;
         while (iter) {
-                printf("Len %ld\n", iter->len);
+                if (iter->p == 0) {
+                        iter = iter->next;
+                        continue;
+                }
+                putchar('\n');
+                
+                printf("ramec %d\n", iter->p);
+                printf("Dlzka poskytnute PCAP API - %ld B\n", iter->len);
+                printf("Dlzka prenasana po mediu - %ld B\n", iter->len + 4);
+                puts("EthernetII");
+                printf("Zdrojova MAC adresa: ");
+
+                uint8_t *data = iter->dump;
+                PRINT(6); putchar('\n');
+
+                printf("Cielova MAC adresa: ");
+                PRINT(6); putchar('\n');
+
+                ROLL(2);
+                ROLL(12);
+                puts("IPv4");
+                printf("Zdrojova IP adresa: ");
+
+                printf("%u.%u.%u.%u\n", *data, *(data+1), *(data+2), *(data+3));
+                ROLL(4);
+
+                printf("Cielova IP adresa: ");
+                
+                printf("%u.%u.%u.%u\n", *data, *(data+1), *(data+2), *(data+3));
+
+                puts("TCP");
+
+                printf("Zdrojovy port: ");
+                ROLL(4);
+                printf("%u\n", (data[0] << 8) | data[1]);
+
+                printf("Cielovy port: ");
+                ROLL(2);
+                printf("%u\n", (data[0] << 8) | data[1]);
+                
                 iter = iter->next;
         }
 }
@@ -518,4 +668,24 @@ void init_nums()
         while (fscanf(tcpf, "%d %s", &num, name) != EOF)
                 strcpy(tcpProts[num], name);
         fclose(tcpf);
+}
+
+LIST *create_list()
+{
+        LIST* l;
+        l = malloc(sizeof *l);
+        l->head = malloc(sizeof *(l->head));
+        return l;
+}
+
+void init_lists(LISTS* ls)
+{
+        ls->http = create_list();
+        ls->https = create_list();
+        ls->ssh = create_list();
+        ls->telnet = create_list();
+        ls->tftp = create_list();
+        ls->ftp_com = create_list();
+        ls->ftp_data = create_list();
+        ls->arp_raw = create_list();
 }
