@@ -109,6 +109,8 @@ void add_node(const uint8_t*, size_t);
 void print_nodes();
 NODE *caps;
 
+
+
 /* To collect data based on function test */
 typedef struct collector {
         char name[250];
@@ -154,6 +156,7 @@ void print_data(const u_char *data, size_t len, size_t pktlen, size_t count)
                 printf("%s%s\n", "EtherType:", etherTypes[data[0]<<8 | data[1]]);
 
                 if (is_ipv4(data)) {
+                        /* Osetrit viac ako 5*4 hlavicku ipv4 */
                         ROLL(2);
                         ROLL(9);
                         if (is_tcp(data)) {
