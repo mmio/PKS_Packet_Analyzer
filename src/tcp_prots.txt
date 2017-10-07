@@ -1,2 +1,4 @@
-12 ahoj
-33 mmmm
+80 http
+8080 http
+8008 http
+

@@ -1,10 +1,10 @@
-1	ICMP
-4	IPv4
-6	TCP
-17	UDP
-27	RDP
-41	IPv6
-88	EIGRP
-89	OSPF
-111	IPX
+1	icmp
+4	ipv4
+6	tcp
+17	udp
+27	rdp
+41	ipv6
+88	eigrp
+89	ospf
+111	ipx
 

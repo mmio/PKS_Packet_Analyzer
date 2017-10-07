@@ -29,6 +29,221 @@ run in problems
 #define PRT_FIRST 20
 #define PRT_LAST 20
 
+char etherTypes[0x10000][512];
+char tcpProts[0x10000][512];
+char ip4Prots[0x1000][512];
+
+typedef struct {
+        uint8_t dst_addr[6];
+        uint8_t src_addr[6];
+        uint8_t length[2];
+        uint8_t payload_fcs[1504];
+} FRAME;
+
+typedef struct data {
+        int len;
+        int num;
+        FRAME raw;
+        struct data *next;
+} DATA;  
+
+typedef struct collector {
+        char name[250];
+        DATA *data;
+        bool (*test)(const DATA*);
+        void (*add)(struct collector*, DATA*);
+        void (*print)(const struct collector*);
+        void (*destructor)(struct collector*);
+} COLLECTOR;
+
+COLLECTOR* new_collector(char *name,
+                         bool(*test)(const DATA*),
+                         void(*add)(struct collector*,DATA*),
+                         void(*print)(const COLLECTOR*),
+                         void(*destruct)(COLLECTOR*)
+        );
+
+/* Temporary place for functions */
+
+int get_ether_prot_num(char *name) {
+        for (int i = 1; i < 0x10000; ++i)
+                if (strcmp(name, etherTypes[i]) == 0)
+                        return i;
+        return 0;
+}
+
+int get_ipv4_prot_num(char *name)
+{
+        for (int i = 1; i < 0x1000; ++i)
+                if (strcmp(name, ip4Prots[i]) == 0)
+                        return i;
+        return 0;
+}
+
+int get_tcp_prot_num(char *name)
+{
+        for (int i = 1; i < 0x1000; ++i)
+                if (strcmp(name, tcpProts[i]) == 0)
+                        return i;
+        return 0;
+}
+
+/* TMP END */
+
+bool test_ipv4_tcp (const DATA *d, char *name) {
+        int prot = d->raw.length[0] << 8 | d->raw.length[1];
+        if ( prot == get_ether_prot_num("ipv4")) {
+                int ip_len = d->raw.payload_fcs[0] & 0xF;
+
+                prot = d->raw.payload_fcs[9];
+                if ( prot  == get_ipv4_prot_num("tcp")) {
+
+                        
+                        int offset = ip_len * 4;
+                        int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1];
+                        int dst_p = d->raw.payload_fcs[offset+2] << 8 | d->raw.payload_fcs[offset+3];
+                        if (src_p == get_tcp_prot_num(name) || dst_p == get_tcp_prot_num(name))
+                                return true;
+                }
+        }
+        
+        return false;
+}
+
+bool test_http(const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "http")) ? true : false;
+}
+
+bool test_https (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "https")) ? true : false;
+}
+
+bool test_telnet (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "telnet")) ? true : false;
+}
+
+bool test_ssh (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "ssh")) ? true : false;
+}
+
+bool test_ftp_data (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "ftp_data")) ? true : false;
+}
+
+bool test_ftp_com (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "ftp_com")) ? true : false;
+}
+
+bool test_tftp (const DATA *d)
+{
+        return  (test_ipv4_tcp(d, "tftp")) ? true : false;
+}
+
+void add_list (struct collector* c, DATA *d)
+{
+        DATA *iter = c->data;
+        if (iter == NULL) {
+                c->data = d;
+        } else {
+                while (iter->next != NULL)
+                        iter = iter->next;
+                iter->next = d;
+        }
+}
+
+void print_list (const COLLECTOR* c)
+{
+        DATA* iter = c->data;
+        puts("--------------------------------------------");
+
+        while (iter) {
+                printf("%d\n", iter->num);
+                printf("%x %x\n", iter->raw.dst_addr[1], iter->raw.src_addr[1]);
+                iter = iter->next;
+        }
+}
+
+void destruct () { }
+
+COLLECTOR* new_collector(char *name,
+                         bool(*test)(const DATA*),
+                         void(*add)(COLLECTOR*, DATA*),
+                         void(*print)(const COLLECTOR*),
+                         void(*destruct)(COLLECTOR*))
+{
+        COLLECTOR *new_c = malloc(sizeof *new_c);
+        strcpy(new_c->name, name);
+        new_c->data = NULL;
+        new_c->test = test;
+        new_c->add = add;
+        new_c->print = print;
+        new_c->destructor = destruct;
+
+        return new_c;
+}
+
+COLLECTOR** create_collector_set ()
+{
+        COLLECTOR **collector_set = malloc(sizeof *collector_set * 7);
+        
+        collector_set[0] = new_collector("http", test_http, add_list, print_list, destruct);
+        collector_set[1] = new_collector("https", test_https, add_list, print_list, destruct);
+        collector_set[2] = new_collector("telnet", test_telnet, add_list, print_list, destruct);
+        collector_set[3] = new_collector("ssh", test_ssh, add_list, print_list, destruct);
+        collector_set[4] = new_collector("ftp_data", test_ftp_data, add_list, print_list, destruct);
+        collector_set[5] = new_collector("ftp_com", test_ftp_com, add_list, print_list, destruct);
+        collector_set[6] = new_collector("tftp", test_tftp, add_list, print_list, destruct);
+        
+        return collector_set;
+}
+
+int main_loop(int argc, char *argv[]) {
+        char errbuf[PCAP_ERRBUF_SIZE];
+        if (argc != 2) {
+                puts("Usage: ./test.c <savefile>");
+                return 1;
+        }
+        
+        pcap_t *handle = pcap_open_offline(argv[1], errbuf);
+        if (!handle) {
+                puts(errbuf);
+                return 1;
+        }
+
+        COLLECTOR** cs = create_collector_set();
+        
+        struct pcap_pkthdr *ph = malloc(sizeof *ph);
+        const u_char *data;
+        int count = 1;
+        while ((data = pcap_next(handle, ph))) {
+                DATA *d = malloc(sizeof *d);
+                d->raw = *(FRAME*)(data);
+                d->len = ph->caplen;
+                d->num = count;
+
+                for (int i = 0; i < 7; ++i)
+                        if (cs[i]->test(d)) {
+                                printf("\n%d\n", i);
+                                cs[i]->add(cs[i], d);
+                                break;
+                        }
+                
+                count++;
+        }
+
+        for (int i = 0; i < 7; ++i)
+                cs[i]->print(cs[i]);
+                
+
+        return 0;
+}
+
 #define ROLL(x)                                                  \
         {                                                        \
                 for (size_t i = 0; i < (x); ++i, data++);        \
@@ -46,20 +261,9 @@ run in problems
         }                                                        \
                 
 
-typedef struct {
-        uint8_t dst_addr[6];
-        uint8_t src_addr[6];
-} MAC;
 
-typedef struct {
-        MAC mac;
-        uint8_t l_o_et[2];
-        uint8_t payload_fcs[1504];
-} FRAME;
 
-char etherTypes[0x10000][512];
-char tcpProts[0x10000][512];
-char ip4Prots[0x1000][512];
+
 
 bool is_etherII(const uint8_t fields[2]);
 bool is_ipv4(const uint8_t type[2]);
@@ -83,11 +287,11 @@ void print_struct_data(const u_char *data, size_t caplen, size_t wire_len, size_
         const FRAME *frm = (FRAME*)data;
         
         printf("%s", "Destination MAC: ");
-        print_bytes(frm->mac.dst_addr, 6);
+        print_bytes(frm->dst_addr, 6);
         putchar('\n');
         
         printf("%s", "Source MAC: ");
-        print_bytes(frm->mac.src_addr, 6);
+        print_bytes(frm->src_addr, 6);
         putchar('\n');
 
         for (size_t i = 0; i < caplen; ++i)
@@ -141,14 +345,7 @@ NODE *caps;
 NODE *icmp;
 
 /* To collect data based on function test */
-typedef struct collector {
-        char name[250];
-        NODE *list;
-        bool(*test)(const uint8_t*);
-        void(*print)(const struct collector*); /* Must be specifie so that it knows what and how to print */
-        void (*destructor)(struct collector*);
-} COLLECTOR;
-COLLECTOR* new_collector();
+
 /* Also need an array of collectors */
 /* Something like this, maybe????? */
 /* bool test_for_http(const uint8_t *data) { */
@@ -446,6 +643,9 @@ void print_arp_pairs(ARP_PAIR *alp, int pair_count)
 
 int main(int argc, char **argv)
 {
+        init_nums();
+        main_loop(argc, argv);
+        return 0;
         LISTS *lsts = calloc(1, sizeof *lsts);
         init_lists(lsts);
         init_nums();
