@@ -50,6 +50,7 @@ typedef struct data {
 typedef struct collector {
         char name[250];
         DATA *data;
+        DATA *tail;
         bool (*test)(const DATA*);
         void (*add)(struct collector*, DATA*);
         void (*print)(const struct collector*);
@@ -98,6 +99,9 @@ bool test_ipv4_tcp (const DATA *d, char *name) {
                 prot = d->raw.payload_fcs[9];
                 if ( prot  == get_ipv4_prot_num("tcp")) {
 
+                        if (strcmp(name, "any"))
+                                return true;
+                        
                         
                         int offset = ip_len * 4;
                         int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1];
@@ -110,50 +114,21 @@ bool test_ipv4_tcp (const DATA *d, char *name) {
         return false;
 }
 
-bool test_http(const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "http")) ? true : false;
-}
-
-bool test_https (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "https")) ? true : false;
-}
-
-bool test_telnet (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "telnet")) ? true : false;
-}
-
-bool test_ssh (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "ssh")) ? true : false;
-}
-
-bool test_ftp_data (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "ftp_data")) ? true : false;
-}
-
-bool test_ftp_com (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "ftp_com")) ? true : false;
-}
-
-bool test_tftp (const DATA *d)
-{
-        return  (test_ipv4_tcp(d, "tftp")) ? true : false;
-}
+bool test_http(const DATA *d) { return  (test_ipv4_tcp(d, "http")) ? true : false; }
+bool test_https (const DATA *d) { return  (test_ipv4_tcp(d, "https")) ? true : false; }
+bool test_telnet (const DATA *d) { return  (test_ipv4_tcp(d, "telnet")) ? true : false; }
+bool test_ssh (const DATA *d) { return  (test_ipv4_tcp(d, "ssh")) ? true : false; }
+bool test_ftp_data (const DATA *d) { return  (test_ipv4_tcp(d, "ftp_data")) ? true : false; }
+bool test_ftp_com (const DATA *d) { return  (test_ipv4_tcp(d, "ftp_com")) ? true : false; }
+bool test_tftp (const DATA *d) { return  (test_ipv4_tcp(d, "tftp")) ? true : false; }
 
 void add_list (struct collector* c, DATA *d)
 {
-        DATA *iter = c->data;
-        if (iter == NULL) {
-                c->data = d;
+        if (c->tail == NULL) {
+                c->data = c->tail = d;
         } else {
-                while (iter->next != NULL)
-                        iter = iter->next;
-                iter->next = d;
+                c->tail->next = d;
+                c->tail = d;
         }
 }
 
@@ -180,6 +155,7 @@ COLLECTOR* new_collector(char *name,
         COLLECTOR *new_c = malloc(sizeof *new_c);
         strcpy(new_c->name, name);
         new_c->data = NULL;
+        new_c->tail = NULL;
         new_c->test = test;
         new_c->add = add;
         new_c->print = print;
@@ -188,9 +164,10 @@ COLLECTOR* new_collector(char *name,
         return new_c;
 }
 
-COLLECTOR** create_collector_set ()
+COLLECTOR** create_collector_set (int *n)
 {
-        COLLECTOR **collector_set = malloc(sizeof *collector_set * 7);
+        *n = 8;
+        COLLECTOR **collector_set = malloc(sizeof *collector_set * (*n));
         
         collector_set[0] = new_collector("http", test_http, add_list, print_list, destruct);
         collector_set[1] = new_collector("https", test_https, add_list, print_list, destruct);
@@ -199,6 +176,7 @@ COLLECTOR** create_collector_set ()
         collector_set[4] = new_collector("ftp_data", test_ftp_data, add_list, print_list, destruct);
         collector_set[5] = new_collector("ftp_com", test_ftp_com, add_list, print_list, destruct);
         collector_set[6] = new_collector("tftp", test_tftp, add_list, print_list, destruct);
+        collector_set[7] = new_collector("http", test_http, add_list, print_list, destruct);
         
         return collector_set;
 }
@@ -206,7 +184,7 @@ COLLECTOR** create_collector_set ()
 int main_loop(int argc, char *argv[]) {
         char errbuf[PCAP_ERRBUF_SIZE];
         if (argc != 2) {
-                puts("Usage: ./test.c <savefile>");
+                puts("Usage: ./packet_analyzer.out <savefile>");
                 return 1;
         }
         
@@ -216,7 +194,8 @@ int main_loop(int argc, char *argv[]) {
                 return 1;
         }
 
-        COLLECTOR** cs = create_collector_set();
+        int cn;
+        COLLECTOR** cs = create_collector_set(&cn);
         
         struct pcap_pkthdr *ph = malloc(sizeof *ph);
         const u_char *data;
@@ -227,9 +206,10 @@ int main_loop(int argc, char *argv[]) {
                 d->len = ph->caplen;
                 d->num = count;
 
-                for (int i = 0; i < 7; ++i)
+                cs[cn-1]->add(cs[cn-1], d);
+        
+                for (int i = 0; i < cn-1; ++i)
                         if (cs[i]->test(d)) {
-                                printf("\n%d\n", i);
                                 cs[i]->add(cs[i], d);
                                 break;
                         }
@@ -237,7 +217,8 @@ int main_loop(int argc, char *argv[]) {
                 count++;
         }
 
-        for (int i = 0; i < 7; ++i)
+        cs[cn-1]->print(cs[cn-1]);
+        for (int i = 0; i < cn-1; ++i)
                 cs[i]->print(cs[i]);
                 
 

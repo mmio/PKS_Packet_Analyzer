@@ -1,6 +1,5 @@
 CC=gcc
-#CFLAGS=-Wall -Wextra -Werror -pedantic -pipe -O3 -lpcap -march=native
-CFLAGS=-lpcap
+CFLAGS=-Wall -Wextra -Werror -pedantic -pipe -O3 -lpcap -march=native
 
 BIN=./bin/
 SRC=./src/
