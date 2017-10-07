@@ -309,7 +309,6 @@ void data_analysis(const u_char *data, size_t len, LISTS *lsts)
                         /*         } */
                         /* } */
                 } else if (is_arp(data)) {
-                        puts("----------Adding arp stuff----------");
                         lsts->arp_raw = add_node_2(lsts->arp_raw, data, len, 1);
                 }
         }
@@ -349,8 +348,8 @@ int get_list_len(LIST *ls) {
 
 bool is_arp_request(const uint8_t *data)
 {
-        ROLL(14);
-        ROLL(7);
+        ROLL(4);
+        ROLL(5);
 
         if (data[0] == 1)
                 return true;
@@ -360,10 +359,10 @@ bool is_arp_request(const uint8_t *data)
 
 bool is_arp_reply(const uint8_t *data)
 {
-        ROLL(14);
-        ROLL(7);
+        ROLL(4);
+        ROLL(5);
 
-        if (data[0] == 0)
+        if (data[0] == 2)
                 return true;
         
         return false;
@@ -375,41 +374,38 @@ bool is_arp_pair(const uint8_t *rq, const uint8_t *re)
         int responds_to[4];
         
         const uint8_t *data = rq;
-        ROLL(14);
-        ROLL(39);
+        ROLL(16);
 
         for (int i = 0; i < 4; ++i)
                 wants_to_know[i] = *(data+i);
 
         data = re;
-        ROLL(14);
-        ROLL(29);
+        ROLL(26);
 
         for (int i = 0; i < 4; ++i)
                 responds_to[i] = *(data+i);
-        
+
         for (int i = 0; i < 4; ++i)
                 if (wants_to_know[i] != responds_to[i])
                         return false;
         return true;
 }
 
-void find_arp_pairs(LIST *ls , ARP_PAIR *alp)
+int find_arp_pairs(LIST *ls , ARP_PAIR *alp)
 {
         int counter = 0;
         NODE *iter = ls->head;
-        /* find request */
         while(iter) {
                 if (is_arp_request(iter->dump)) {
                         NODE *iter2 = ls->head;
                         while (iter2) {
                                 if (is_arp_reply(iter2->dump)) {
-                                        /* Check if respons is for me  */
-
-                                        /* Yes */
                                         if (is_arp_pair(iter->dump, iter2->dump)) {
-                                                memcpy(alp[counter].request->dump, iter->dump, iter->len);
-                                                memcpy(alp[counter++].reply->dump, iter2->dump, iter2->len);
+                                                alp[counter].request = malloc(sizeof(ARP_FRAME));
+                                                alp[counter].reply = malloc(sizeof(ARP_FRAME));
+                                                
+                                                memcpy(alp[counter].request->dump, iter->dump, 30);
+                                                memcpy(alp[counter++].reply->dump, iter2->dump, 30);
                                                 break;
                                         }
                                 }
@@ -419,6 +415,33 @@ void find_arp_pairs(LIST *ls , ARP_PAIR *alp)
                 iter = iter->next;
         }
         
+        return counter;
+}
+
+void print_arp_pairs(ARP_PAIR *alp, int pair_count)
+{
+        for (int i = 0; i < pair_count; ++i) {
+                printf("Komunikacia c. %d\n", i+1);
+                printf("ARP-Request. IP Adresa %d.%d.%d.%d ", alp[i].request->dump[16],
+                       alp[i].request->dump[17],
+                       alp[i].request->dump[18],
+                       alp[i].request->dump[19]
+                        );
+                puts("MAC Adresa: ???");
+
+                printf("ARP-Reply. IP Adresa %d.%d.%d.%d ", alp[i].reply->dump[26],
+                       alp[i].reply->dump[27],
+                       alp[i].reply->dump[28],
+                       alp[i].reply->dump[29]
+                        );
+                printf("Mac Adresa: %02X %02X %02X %02X %02X %02X\n", alp[i].reply->dump[10],
+                       alp[i].reply->dump[11],
+                       alp[i].reply->dump[12],
+                       alp[i].reply->dump[13],
+                       alp[i].reply->dump[14],
+                       alp[i].reply->dump[15]
+                        );
+        }
 }
 
 int main(int argc, char **argv)
@@ -459,9 +482,9 @@ int main(int argc, char **argv)
 
         int arp_len = get_list_len(lsts->arp_raw);
         ARP_PAIR *alp = malloc(sizeof(ARP_PAIR) * arp_len);
-        find_arp_pairs(lsts->arp_raw, alp);
-        //print_arp_pairs();
-
+        int pair_count =find_arp_pairs(lsts->arp_raw, alp);
+        print_arp_pairs(alp, pair_count);
+        return 0;
         puts("Statistika IP odosielatelov");
         print_ip_list();
 
