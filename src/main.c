@@ -314,6 +314,7 @@ void print_ip_stat(COLLECTOR *main) {
 
         printf("Najviac poslal ");
         print_ip(int_to_ip(pip[max_i].ipi));
+        printf(" %ldB\n", pip[max_i].amount);
 }
 
 void add_list (COLLECTOR* c, DATA *d)
