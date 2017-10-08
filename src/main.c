@@ -213,14 +213,44 @@ void afind_arp_pairs(const COLLECTOR *c)
                                                    &iter2->raw.payload_fcs[24], 4) == 0)
                                         {
                                                 printf("Komunikacia c. %d", poradie);
-                                                printf("\nARP Request");
+                                                printf("\nARP Request,");
+                                                printf(" IP adresa ");
+                                                print_ip(&iter->raw.payload_fcs[24]);
+
+                                                printf(", MAC adresa: ???");
+                                                printf("\nZdrjova IP adresa: ");
+                                                print_ip(&iter->raw.payload_fcs[14]);
+                                                putchar('\n');
+
+                                                printf("Cielova IP adresa: ");
+                                                print_ip(&iter->raw.payload_fcs[24]);
                                                 print_basic_list(iter);
                                                 dump_raw(iter);
 
-                                                printf("\nARP Reply");
+
+
+
+                                                
+                                                printf("\n\nARP Reply,");
+                                                printf(" IP adresa ");
+                                                print_ip(&iter->raw.payload_fcs[24]);
+                                                printf(", MAC adresa: %02X %02X %02X %02X %02X %02X",
+                                                       iter2->raw.payload_fcs[8],
+                                                       iter2->raw.payload_fcs[9],
+                                                       iter2->raw.payload_fcs[10],
+                                                       iter2->raw.payload_fcs[11],
+                                                       iter2->raw.payload_fcs[12],
+                                                       iter2->raw.payload_fcs[13]
+                                                        );
+                                                printf("\nZdrjova IP adresa: ");
+                                                print_ip(&iter2->raw.payload_fcs[14]);
+                                                putchar('\n');
+
+                                                printf("Cielova IP adresa: ");
+                                                print_ip(&iter2->raw.payload_fcs[24]);
                                                 print_basic_list(iter2);
                                                 dump_raw(iter2);
-                                                
+                                                putchar('\n');
                                                 break;
                                         }
                                 }
