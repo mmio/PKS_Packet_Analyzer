@@ -31,6 +31,7 @@ run in problems
 
 char etherTypes[0x10000][512];
 char tcpProts[0x10000][512];
+char udpProts[0x10000][512];
 char ip4Prots[0x1000][512];
 
 typedef struct {
@@ -89,7 +90,60 @@ int get_tcp_prot_num(char *name)
         return 0;
 }
 
+int get_udp_prot_num(char *name)
+{
+        for (int i = 1; i < 0x1000; ++i)
+                if (strcmp(name, udpProts[i]) == 0)
+                        return i;
+        return 0;
+}
+
+char * get_frame_type(FRAME *f)
+{
+        char *name = malloc(sizeof *name * 40);
+
+        if (f->length[0] >= 0x08)
+                strcpy(name, "Ethernet II");
+        else {
+                if (f->payload_fcs[0] == 0xAA)
+                        strcpy(name, "IEEE 802.3 - SNAP");
+                else if (f->payload_fcs[0] == 0xE0)
+                        strcpy(name, "IEEE 802.3 - IPX");
+                else
+                        strcpy(name, "IEEE 802.3 - LLC");
+        }
+        return name;
+}
+
 /* TMP END */
+
+bool test_ipv4(const DATA *d)
+{
+        int prot = d->raw.length[0] << 8 | d->raw.length[1];
+        if ( prot == get_ether_prot_num("ipv4"))
+                return true;
+        return false;
+}
+
+bool test_ipv4_udp (const DATA *d, char *name) {
+        int prot = d->raw.length[0] << 8 | d->raw.length[1];
+        if ( prot == get_ether_prot_num("ipv4")) {
+                int ip_len = d->raw.payload_fcs[0] & 0xF;
+
+                prot = d->raw.payload_fcs[9];
+                if ( prot  == get_ipv4_prot_num("udp")) {
+                        
+                        
+                        int offset = ip_len * 4;
+                        int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1];
+                        int dst_p = d->raw.payload_fcs[offset+2] << 8 | d->raw.payload_fcs[offset+3];
+                        if (src_p == get_udp_prot_num(name) || dst_p == get_udp_prot_num(name))
+                                return true;
+                }
+        }
+        
+        return false;
+}
 
 bool test_ipv4_tcp (const DATA *d, char *name) {
         int prot = d->raw.length[0] << 8 | d->raw.length[1];
@@ -99,10 +153,6 @@ bool test_ipv4_tcp (const DATA *d, char *name) {
                 prot = d->raw.payload_fcs[9];
                 if ( prot  == get_ipv4_prot_num("tcp")) {
 
-                        if (strcmp(name, "any"))
-                                return true;
-                        
-                        
                         int offset = ip_len * 4;
                         int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1];
                         int dst_p = d->raw.payload_fcs[offset+2] << 8 | d->raw.payload_fcs[offset+3];
@@ -120,7 +170,66 @@ bool test_telnet (const DATA *d) { return  (test_ipv4_tcp(d, "telnet")) ? true :
 bool test_ssh (const DATA *d) { return  (test_ipv4_tcp(d, "ssh")) ? true : false; }
 bool test_ftp_data (const DATA *d) { return  (test_ipv4_tcp(d, "ftp_data")) ? true : false; }
 bool test_ftp_com (const DATA *d) { return  (test_ipv4_tcp(d, "ftp_com")) ? true : false; }
-bool test_tftp (const DATA *d) { return  (test_ipv4_tcp(d, "tftp")) ? true : false; }
+bool test_tftp (const DATA *d) { return  (test_ipv4_udp(d, "tftp")) ? true : false; }
+bool test_icmp(const DATA *d)
+{
+        if (test_ipv4(d)) {
+                int prot = d->raw.payload_fcs[9];
+                if ( prot  == get_ipv4_prot_num("icmp"))
+                        return true;
+        }
+        return false;
+}
+bool test_arp(const DATA *d)
+{
+        int prot = d->raw.length[0] << 8 | d->raw.length[1];
+        if (prot == get_ether_prot_num("arp"))
+                return true;
+        return false;
+}
+
+void print_ip(uint8_t ip[4])
+{
+        printf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+}
+
+void print_basic_list (DATA*);
+void print_generic_list(const COLLECTOR *);
+void dump_raw(const DATA*);
+void afind_arp_pairs(const COLLECTOR *c)
+{
+        puts("--------------------------------------------");
+        puts(c->name);
+        puts("--------------------------------------------");
+        
+        int poradie = 1;
+        DATA *iter = c->data;
+        while(iter) {
+                if (iter->raw.payload_fcs[7] == 1) {
+                        DATA *iter2 = c->data;
+                        while (iter2) {
+                                if (iter2->raw.payload_fcs[7] == 2 ) {
+                                        if (memcmp(&iter->raw.payload_fcs[14],
+                                                   &iter2->raw.payload_fcs[24], 4) == 0)
+                                        {
+                                                printf("Komunikacia c. %d", poradie);
+                                                printf("\nARP Request");
+                                                print_basic_list(iter);
+                                                dump_raw(iter);
+
+                                                printf("\nARP Reply");
+                                                print_basic_list(iter2);
+                                                dump_raw(iter2);
+                                                
+                                                break;
+                                        }
+                                }
+                                iter2 = iter2->next;
+                        }
+                }
+                iter = iter->next;
+        }
+}
 
 void add_list (struct collector* c, DATA *d)
 {
@@ -132,9 +241,54 @@ void add_list (struct collector* c, DATA *d)
         }
 }
 
+void dump_raw(const DATA* d)
+{
+        uint8_t *raw_data = (uint8_t*)&(d->raw);
+        for (int i = 0; i < d->len; ++i) {
+                if (i % 8 == 0)
+                        printf("  ");
+                        
+                if (i % 32 == 0)
+                        putchar('\n');
+                        
+                printf("%02X ", raw_data[i]);
+        }
+}
+
+void print_basic_list (DATA* iter)
+{
+        printf("\n\nRamec c %d\n", iter->num);
+
+        printf("Dlzka ramca poskytnuta PCAP API: %d\n", iter->len);
+        printf("Dlzka ramca prenasana po mediu: %d\n", iter->len+4);
+
+        puts(get_frame_type(&iter->raw));
+
+        printf("Zdrojova MAC adresa: %02X %02X %02X %02X %02X %02X\n",
+               iter->raw.dst_addr[0],
+               iter->raw.dst_addr[1],
+               iter->raw.dst_addr[2],
+               iter->raw.dst_addr[3],
+               iter->raw.dst_addr[4],
+               iter->raw.dst_addr[5]
+                );
+
+        printf("Cielova MAC adresa: %02X %02X %02X %02X %02X %02X",
+               iter->raw.src_addr[0],
+               iter->raw.src_addr[1],
+               iter->raw.src_addr[2],
+               iter->raw.src_addr[3],
+               iter->raw.src_addr[4],
+               iter->raw.src_addr[5]
+                );
+        putchar('\n');
+}
+
 void print_list (const COLLECTOR* c)
 {
         DATA* iter = c->data;
+        puts("--------------------------------------------");
+        puts(c->name);
         puts("--------------------------------------------");
 
         while (iter) {
@@ -143,6 +297,151 @@ void print_list (const COLLECTOR* c)
                 iter = iter->next;
         }
 }
+
+void print_udp_list(const COLLECTOR* c)
+{
+        DATA* iter = c->data;
+        puts("\n--------------------------------------------");
+        puts(c->name);
+        puts("--------------------------------------------");
+
+        while (iter) {
+                print_basic_list(iter);
+
+                puts("IPv4");
+                printf("Zdrojova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[12],
+                       iter->raw.payload_fcs[13],
+                       iter->raw.payload_fcs[14],
+                       iter->raw.payload_fcs[15]
+                        );
+                printf("Cielova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[16],
+                       iter->raw.payload_fcs[17],
+                       iter->raw.payload_fcs[18],
+                       iter->raw.payload_fcs[19]
+                        );
+
+                int ip4len = iter->raw.payload_fcs[0] & 0xF;
+                int off = ip4len * 4;
+                printf("UDP\nzdrojovy port: %d\n", iter->raw.payload_fcs[off] << 8 | iter->raw.payload_fcs[off + 1]);
+                printf("cielovy port: %d", iter->raw.payload_fcs[off+2] << 8 | iter->raw.payload_fcs[off + 3]);
+                
+                dump_raw(iter);
+                
+                iter = iter->next;
+        }
+}
+
+void print_tcp_list(const COLLECTOR* c)
+{
+        DATA* iter = c->data;
+        puts("\n--------------------------------------------");
+        puts(c->name);
+        puts("--------------------------------------------");
+
+        while (iter) {
+                print_basic_list(iter);
+
+                puts("IPv4");
+                printf("Zdrojova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[12],
+                       iter->raw.payload_fcs[13],
+                       iter->raw.payload_fcs[14],
+                       iter->raw.payload_fcs[15]
+                        );
+                printf("Cielova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[16],
+                       iter->raw.payload_fcs[17],
+                       iter->raw.payload_fcs[18],
+                       iter->raw.payload_fcs[19]
+                        );
+
+                int ip4len = iter->raw.payload_fcs[0] & 0xF;
+                int off = ip4len * 4;
+                printf("TCP\nzdrojovy port: %d\n", iter->raw.payload_fcs[off] << 8 | iter->raw.payload_fcs[off + 1]);
+                printf("cielovy port: %d", iter->raw.payload_fcs[off+2] << 8 | iter->raw.payload_fcs[off + 3]);
+                
+                dump_raw(iter);
+                
+                iter = iter->next;
+        }
+}
+
+
+
+void print_generic_list(const COLLECTOR *c)
+{
+        DATA* iter = c->data;
+        puts("--------------------------------------------");
+        puts(c->name);
+        puts("--------------------------------------------");
+
+        while (iter) {
+                print_basic_list(iter);
+                dump_raw(iter);
+                iter = iter->next;
+        }
+}
+
+void print_icmp_list(const COLLECTOR *c)
+{
+        DATA* iter = c->data;
+        puts("\n--------------------------------------------");
+        puts(c->name);
+        puts("--------------------------------------------");
+
+        while (iter) {
+                print_basic_list(iter);
+
+                puts("IPv4");
+                printf("Zdrojova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[12],
+                       iter->raw.payload_fcs[13],
+                       iter->raw.payload_fcs[14],
+                       iter->raw.payload_fcs[15]
+                        );
+
+                 printf("Cielova ip adresa: %d.%d.%d.%d\n",
+                       iter->raw.payload_fcs[16],
+                       iter->raw.payload_fcs[17],
+                       iter->raw.payload_fcs[18],
+                       iter->raw.payload_fcs[19]
+                        );
+
+                 char *msg = malloc(sizeof *msg * 50);
+
+                 switch (iter->raw.payload_fcs[14]) {
+                 case 3:
+                         strcpy(msg, "Host unreachable");
+                         break;
+                 case 0:
+                         strcpy(msg, "Echo Reply");
+                         break;
+                 case 5:
+                         strcpy(msg, "Redirect");
+                         break;
+                 case 8:
+                         strcpy(msg, "Echo");
+                         break;
+                 case 11:
+                         strcpy(msg, "Time Exceede");
+                         break;
+                 default:
+                         strcpy(msg, "Unknown");
+                 }
+
+                 printf("Type: %s\n", msg);
+
+                 dump_raw(iter);
+                 
+                iter = iter->next;
+        }
+}
+
+/* void print_arp_list(const COLLECTOR* c) { */
+        
+/* } */
 
 void destruct () { }
 
@@ -166,17 +465,20 @@ COLLECTOR* new_collector(char *name,
 
 COLLECTOR** create_collector_set (int *n)
 {
-        *n = 8;
+        *n = 10;
         COLLECTOR **collector_set = malloc(sizeof *collector_set * (*n));
         
-        collector_set[0] = new_collector("http", test_http, add_list, print_list, destruct);
-        collector_set[1] = new_collector("https", test_https, add_list, print_list, destruct);
-        collector_set[2] = new_collector("telnet", test_telnet, add_list, print_list, destruct);
-        collector_set[3] = new_collector("ssh", test_ssh, add_list, print_list, destruct);
-        collector_set[4] = new_collector("ftp_data", test_ftp_data, add_list, print_list, destruct);
-        collector_set[5] = new_collector("ftp_com", test_ftp_com, add_list, print_list, destruct);
-        collector_set[6] = new_collector("tftp", test_tftp, add_list, print_list, destruct);
-        collector_set[7] = new_collector("http", test_http, add_list, print_list, destruct);
+        collector_set[0] = new_collector("http", test_http, add_list, print_tcp_list, destruct);
+        collector_set[1] = new_collector("https", test_https, add_list, print_tcp_list, destruct);
+        collector_set[2] = new_collector("telnet", test_telnet, add_list, print_tcp_list, destruct);
+        collector_set[3] = new_collector("ssh", test_ssh, add_list, print_tcp_list, destruct);
+        collector_set[4] = new_collector("ftp_data", test_ftp_data, add_list, print_tcp_list, destruct);
+        collector_set[5] = new_collector("ftp_com", test_ftp_com, add_list, print_tcp_list, destruct);
+        collector_set[6] = new_collector("tftp", test_tftp, add_list, print_udp_list, destruct);
+
+        collector_set[7] = new_collector("icmp", test_icmp, add_list, print_icmp_list, destruct);
+        collector_set[8] = new_collector("arp", test_arp, add_list, afind_arp_pairs , destruct);
+        collector_set[9] = new_collector("all", test_http, add_list, print_generic_list, destruct);
         
         return collector_set;
 }
@@ -206,7 +508,9 @@ int main_loop(int argc, char *argv[]) {
                 d->len = ph->caplen;
                 d->num = count;
 
-                cs[cn-1]->add(cs[cn-1], d);
+                DATA *dl = malloc(sizeof *dl);
+                memcpy(dl, d, sizeof *dl);
+                cs[cn-1]->add(cs[cn-1], dl);
         
                 for (int i = 0; i < cn-1; ++i)
                         if (cs[i]->test(d)) {
@@ -872,6 +1176,15 @@ void init_nums()
         while (fscanf(tcpf, "%d %s", &num, name) != EOF)
                 strcpy(tcpProts[num], name);
         fclose(tcpf);
+
+        FILE *udpf = fopen("src/udp_prots.txt", "r");
+        if (!udpf) {
+                perror("UDP FILE");
+                exit(1);
+        }
+        while (fscanf(udpf, "%d %s", &num, name) != EOF)
+                strcpy(udpProts[num], name);
+        fclose(udpf);
 }
 
 LIST *create_list()
