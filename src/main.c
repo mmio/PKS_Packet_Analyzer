@@ -297,12 +297,23 @@ void print_ip_stat(COLLECTOR *main) {
                 iter = iter->next;
         }
 
+        size_t max = 0;
+        int max_i = -1;
         for (size_t i = 0; i < main->size; ++i) {
                 if (pip[i].ipi == 0)
                         break;
+
+                if (pip[i].amount > max) {
+                        max = pip[i].amount;
+                        max_i = i;
+                }
+                
                 print_ip(int_to_ip(pip[i].ipi));
-                printf(" %ld\n", pip[i].amount);
+                printf(" --> %ldB\n", pip[i].amount);
         }
+
+        printf("Najviac poslal ");
+        print_ip(int_to_ip(pip[max_i].ipi));
 }
 
 void add_list (COLLECTOR* c, DATA *d)
