@@ -12,9 +12,10 @@
 
 #include <pcap/pcap.h>
 
-#define PRT_FIRST 20
-#define PRT_LAST 20
+#define PRT_FIRST 11
+#define PRT_LAST 11
 
+char frameTypes[0x10000][512];
 char etherTypes[0x10000][512];
 char tcpProts[0x10000][512];
 char udpProts[0x10000][512];
@@ -37,7 +38,7 @@ typedef struct data {
 typedef struct collector {
         char name[250];
         size_t size; 
-        DATA *data;
+        void *data;
         DATA *tail;
         bool (*test)(const DATA*);
         void (*add)(struct collector*, DATA*);
@@ -108,12 +109,30 @@ bool test_ipv4(const DATA *d)
         return false;
 }
 
+/* bool test_ipv4_L4 (const DATA *d, char *name, char *l4) { */
+/*         if (test_ipv4(d)) { */
+/*                 int ip_len = d->raw.payload_fcs[0] & 0xF; */
+
+/*                 int prot = d->raw.payload_fcs[9]; */
+/*                 if ( prot  == get_ipv4_prot_num(l4)) { */
+                        
+                        
+/*                         int offset = ip_len * 4; */
+/*                         int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1]; */
+/*                         int dst_p = d->raw.payload_fcs[offset+2] << 8 | d->raw.payload_fcs[offset+3]; */
+/*                         if (src_p == get_udp_prot_num(name) || dst_p == get_udp_prot_num(name)) */
+/*                                 return true; */
+/*                 } */
+/*         } */
+        
+/*         return false; */
+/* } */
+
 bool test_ipv4_udp (const DATA *d, char *name) {
-        int prot = d->raw.length[0] << 8 | d->raw.length[1];
-        if ( prot == get_ether_prot_num("ipv4")) {
+        if (test_ipv4(d)) {
                 int ip_len = d->raw.payload_fcs[0] & 0xF;
 
-                prot = d->raw.payload_fcs[9];
+                int prot = d->raw.payload_fcs[9];
                 if ( prot  == get_ipv4_prot_num("udp")) {
                         
                         
@@ -129,11 +148,10 @@ bool test_ipv4_udp (const DATA *d, char *name) {
 }
 
 bool test_ipv4_tcp (const DATA *d, char *name) {
-        int prot = d->raw.length[0] << 8 | d->raw.length[1];
-        if ( prot == get_ether_prot_num("ipv4")) {
+        if (test_ipv4(d)) {
                 int ip_len = d->raw.payload_fcs[0] & 0xF;
 
-                prot = d->raw.payload_fcs[9];
+                int prot = d->raw.payload_fcs[9];
                 if ( prot  == get_ipv4_prot_num("tcp")) {
 
                         int offset = ip_len * 4;
@@ -172,6 +190,13 @@ bool test_arp(const DATA *d)
         return false;
 }
 
+void print_header(const char *header)
+{
+        puts(  "--------------------------------");
+        printf("%s\n", header);
+        puts(  "--------------------------------");
+}
+
 void print_ip(uint8_t ip[4])
 {
         printf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -182,9 +207,7 @@ void print_generic_list(const COLLECTOR *);
 void dump_raw(const DATA*);
 void afind_arp_pairs(const COLLECTOR *c)
 {
-        puts("--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
+        print_header(c->name);
         
         int poradie = 1;
         DATA *iter = c->data;
@@ -371,28 +394,29 @@ void print_basic_list (DATA* iter)
         putchar('\n');
 }
 
-void print_list (const COLLECTOR* c)
-{
-        DATA* iter = c->data;
-        puts("--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
+/* void print_list (const COLLECTOR* c) */
+/* { */
+/*         DATA* iter = c->data; */
+/*         print_header(c->name); */
 
-        while (iter) {
-                printf("%d\n", iter->num);
-                printf("%x %x\n", iter->raw.dst_addr[1], iter->raw.src_addr[1]);
-                iter = iter->next;
-        }
-}
+/*         while (iter) { */
+/*                 printf("%d\n", iter->num); */
+/*                 printf("%x %x\n", iter->raw.dst_addr[1], iter->raw.src_addr[1]); */
+/*                 iter = iter->next; */
+/*         } */
+/*         putchar('\n'); */
+/* } */
 
 void print_udp_list(const COLLECTOR* c)
 {
+        size_t count = 1;
         DATA* iter = c->data;
-        puts("\n--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
+        print_header(c->name);
 
         while (iter) {
+
+                if (c->size < 20 || (count < PRT_FIRST || count > (c->size - PRT_LAST))) {
+                
                 print_basic_list(iter);
 
                 puts("IPv4");
@@ -415,19 +439,24 @@ void print_udp_list(const COLLECTOR* c)
                 printf("cielovy port: %d", iter->raw.payload_fcs[off+2] << 8 | iter->raw.payload_fcs[off + 3]);
                 
                 dump_raw(iter);
+
+                count++;
+                }
                 
                 iter = iter->next;
         }
+        putchar('\n');
 }
 
 void print_tcp_list(const COLLECTOR* c)
 {
+        size_t count = 1;
         DATA* iter = c->data;
-        puts("\n--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
-
+        print_header(c->name);
         while (iter) {
+
+                if ( c->size < 20 || (count < PRT_FIRST || count > (c->size - PRT_LAST))) {
+                
                 print_basic_list(iter);
 
                 puts("IPv4");
@@ -450,35 +479,42 @@ void print_tcp_list(const COLLECTOR* c)
                 printf("cielovy port: %d", iter->raw.payload_fcs[off+2] << 8 | iter->raw.payload_fcs[off + 3]);
                 
                 dump_raw(iter);
+
+                count++;
+                }
                 
                 iter = iter->next;
         }
+        putchar('\n');
 }
 
 
 
 void print_generic_list(const COLLECTOR *c)
 {
+        size_t count = 1;
         DATA* iter = c->data;
-        puts("--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
-
+        print_header(c->name);
         while (iter) {
-                print_basic_list(iter);
-                dump_raw(iter);
+                if ( c->size < 20 || ( count < PRT_FIRST || count > (c->size - PRT_LAST))) {
+                        print_basic_list(iter);
+                        dump_raw(iter);
+                }
+                count++;
                 iter = iter->next;
         }
 }
 
 void print_icmp_list(const COLLECTOR *c)
 {
+        size_t count = 1;
         DATA* iter = c->data;
-        puts("\n--------------------------------------------");
-        puts(c->name);
-        puts("--------------------------------------------");
+        print_header(c->name);
 
         while (iter) {
+
+                if (c->size < 20 || (count < PRT_FIRST || count > (c->size - PRT_LAST))) {
+                
                 print_basic_list(iter);
 
                 puts("IPv4");
@@ -521,6 +557,9 @@ void print_icmp_list(const COLLECTOR *c)
                  printf("Type: %s\n", msg);
 
                  dump_raw(iter);
+
+                 count++;
+                }
                  
                 iter = iter->next;
         }
@@ -605,9 +644,23 @@ int main_loop(int argc, char *argv[]) {
                 count++;
         }
 
+        /* puts("Select action:"); */
+        /* int choice; */
+        /* if (scanf("%d", &choice) == 1) { */
+
+
+        
+        /*         switch (choice) { */
+        /*         case 0: */
+        /*                 cs[0]->print(cs[0]); */
+        /*         default: */
+        /*                 cs[cn-1]->print(cs[cn-1]); */
+        /*         } */
+        /* } */
+        
         cs[cn-1]->print(cs[cn-1]);
         for (int i = 0; i < cn-1; ++i)
-                cs[i]->print(cs[i]);
+              cs[i]->print(cs[i]);
                 
 
         print_ip_stat(cs[cn-1]);
