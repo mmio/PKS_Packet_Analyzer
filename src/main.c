@@ -1,8 +1,13 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <stdbool.h>
+
 
 #ifdef __GNUC__ 
 #define u_char unsigned char
@@ -523,7 +528,7 @@ void print_generic_list(const COLLECTOR *c)
         size_t count = 1;
         DATA* iter = c->data;
         print_header(c->name);
-        while (iter) {
+        while (iter->next) {
                 if ( c->size < 20 || ( count < PRT_FIRST || count > (c->size - PRT_LAST))) {
                         print_basic_list(iter);
                         dump_raw(iter);
@@ -654,7 +659,7 @@ int main_loop(int argc, char *argv[]) {
         const u_char *data;
         int count = 1;
         while ((data = pcap_next(handle, ph))) {
-                DATA *d = malloc(sizeof *d);
+                DATA *d = calloc(1,sizeof *d);
                 d->raw = *(FRAME*)(data);
                 d->len = ph->caplen;
                 d->num = count;
