@@ -103,7 +103,7 @@ char * get_frame_type(FRAME *f)
                 /* else if (f->payload_fcs[0] == 0xE0) */
                 /*         strcpy(name, "IEEE 802.3 - IPX"); */
                 /* else */
-                strcpy(name, frameTypes[f->length[0]]);
+                strcpy(name, frameTypes[f->payload_fcs[0]]); /* Tu by malo byt 2 */
 
                 if (strcmp(name, "") == 0)
                         strcpy(name, "IEEE 802.3 - LLC");
@@ -165,6 +165,7 @@ bool test_ipv4_tcp (const DATA *d, char *name) {
                 if ( prot  == get_ipv4_prot_num("tcp")) {
 
                         int offset = ip_len * 4;
+
                         int src_p = d->raw.payload_fcs[offset] << 8 | d->raw.payload_fcs[offset+1];
                         int dst_p = d->raw.payload_fcs[offset+2] << 8 | d->raw.payload_fcs[offset+3];
                         if (src_p == get_tcp_prot_num(name) || dst_p == get_tcp_prot_num(name))
@@ -202,7 +203,7 @@ bool test_arp(const DATA *d)
 
 void print_header(const char *header)
 {
-        puts(  "--------------------------------");
+        puts(  "\n--------------------------------");
         printf("%s\n", header);
         puts(  "--------------------------------");
 }
@@ -528,7 +529,7 @@ void print_generic_list(const COLLECTOR *c)
         size_t count = 1;
         DATA* iter = c->data;
         print_header(c->name);
-        while (iter->next) {
+        while (iter) {
                 if ( c->size < 20 || ( count < PRT_FIRST || count > (c->size - PRT_LAST))) {
                         print_basic_list(iter);
                         dump_raw(iter);
@@ -567,7 +568,8 @@ void print_icmp_list(const COLLECTOR *c)
 
                         char *msg = malloc(sizeof *msg * 50);
 
-                        switch (iter->raw.payload_fcs[14]) {
+                        int offset = 4*(iter->raw.payload_fcs[0] & 0xF);
+                        switch (iter->raw.payload_fcs[offset]) {
                         case 3:
                                 strcpy(msg, "Host unreachable");
                                 break;
@@ -619,9 +621,22 @@ COLLECTOR* new_collector(char *name,
         return new_c;
 }
 
+bool test_all()
+{
+        return true;
+}
+
+bool test_llc(const DATA *d)
+{
+        int len = d->raw.length[0] << 8 | d->raw.length[1];
+        if (len < 2048)
+                return true;
+        return false;
+}
+
 COLLECTOR** create_collector_set (int *n)
 {
-        *n = 10;
+        *n = 11;
         COLLECTOR **collector_set = malloc(sizeof *collector_set * (*n));
         
         collector_set[0] = new_collector("http", test_http, add_list, print_tcp_list, destruct);
@@ -634,7 +649,9 @@ COLLECTOR** create_collector_set (int *n)
 
         collector_set[7] = new_collector("icmp", test_icmp, add_list, print_icmp_list, destruct);
         collector_set[8] = new_collector("arp", test_arp, add_list, afind_arp_pairs , destruct);
-        collector_set[9] = new_collector("all", test_http, add_list, print_generic_list, destruct);
+
+        collector_set[9] = new_collector("llc", test_llc,  add_list, print_generic_list, destruct);
+        collector_set[10] = new_collector("all", test_all, add_list, print_generic_list, destruct);
         
         return collector_set;
 }
@@ -694,7 +711,10 @@ int main_loop(int argc, char *argv[]) {
         cs[cn-1]->print(cs[cn-1]);
         for (int i = 0; i < cn-1; ++i)
                 cs[i]->print(cs[i]);
-                
+
+        //cs[9]->print(cs[9]);
+        //putchar('\n');
+        printf("POCET LLC je :%ld\n", cs[9]->size );
 
         print_ip_stat(cs[cn-1]);
         
